@@ -1,105 +1,90 @@
-const express = require('express');
-const cors = require('cors');
-const qrcode = require('qrcode');
-const fs = require('fs');
-const path = require('path');
-const { 
-    default: makeWASocket, 
-    useMultiFileAuthState, 
-    makeInMemoryStore, 
-    DisconnectReason 
-} = require('@whiskeysockets/baileys');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { initializeApp, cert } = require('firebase-admin/app');
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-const pino = require('pino');
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>CRM SuperApp 2.0 - Controle de Bot</title>
+    <style>
+        body { font-family: sans-serif; background: #f0f2f5; padding: 20px; }
+        .card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 600px; margin: auto; }
+        h1 { color: #075e54; text-align: center; }
+        .status { padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 20px; font-weight: bold; }
+        .online { background: #dcf8c6; color: #075e54; }
+        textarea { width: 100%; height: 150px; margin: 10px 0; border-radius: 5px; border: 1px solid #ccc; padding: 10px; }
+        button { width: 100%; padding: 15px; background: #25d366; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #128c7e; }
+        #qrcode { display: block; margin: 20px auto; max-width: 200px; }
+    </style>
+</head>
+<body>
 
-// --- Configuração do Firebase (Lendo do Arquivo para não dar erro de PEM) ---
-let db;
-try {
-    const serviceAccount = require('./firebase-key.json');
-    initializeApp({ credential: cert(serviceAccount) });
-    db = getFirestore();
-    console.log("[Firebase] Conectado com sucesso!");
-} catch (error) {
-    console.error("[Firebase] ERRO: Verifique se o arquivo firebase-key.json existe.", error.message);
-}
-
-// --- Configuração da IA ---
-const apiKey = process.env.GEMINI_API_KEY;
-const genAI = new GoogleGenerativeAI(apiKey);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-// --- Configuração do Servidor ---
-const app = express();
-app.use(cors({ origin: true })); 
-app.use(express.json());
-
-const port = process.env.PORT || 8080;
-const whatsappClients = {};
-const qrCodeDataStore = {}; 
-
-async function getOrCreateWhatsappClient(userId) {
-    if (whatsappClients[userId]) return whatsappClients[userId];
+<div class="card">
+    <h1>SuperApp CRM 2.0</h1>
+    <div id="status-box" class="status">Verificando status...</div>
     
-    // Pastas separadas para múltiplos logins
-    const { state, saveCreds } = await useMultiFileAuthState(`baileys_auth_${userId}`);
+    <img id="qrcode" src="" alt="Aguardando QR Code..." style="display:none;">
 
-    const sock = makeWASocket({
-        auth: state,
-        printQRInTerminal: true, // Mostra no terminal também para segurança
-        browser: ['SuperApp VM', 'Chrome', '1.0.0']
-    });
-
-    sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (qr) {
-            qrCodeDataStore[userId] = await qrcode.toDataURL(qr);
-        }
-
-        if (connection === 'close') {
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            delete whatsappClients[userId];
-            if (shouldReconnect) getOrCreateWhatsappClient(userId);
-        } else if (connection === 'open') {
-            console.log(`[WhatsApp] Cliente ${userId} CONECTADO!`);
-            delete qrCodeDataStore[userId];
-        }
-    });
-
-    whatsappClients[userId] = sock;
-    return sock;
-}
-
-// --- Endpoints ---
-
-app.get('/status', async (req, res) => {
-    const userId = req.query.userId || 'admin';
-    await getOrCreateWhatsappClient(userId);
+    <h3>Identidade da IA (Nicho)</h3>
+    <p>Defina como o bot deve se comportar:</p>
+    <textarea id="prompt" placeholder="Ex: Você é um corretor de imóveis focado em vendas de luxo..."></textarea>
     
-    if (qrCodeDataStore[userId]) {
-        res.send(`
-            <html>
-                <body style="text-align:center; font-family:sans-serif;">
-                    <h1>Escaneie o QR Code (${userId})</h1>
-                    <img src="${qrCodeDataStore[userId]}" width="300">
-                    <p>Atualize a página se o QR expirar.</p>
-                </body>
-            </html>
-        `);
-    } else {
-        res.send(`<h1>Cliente ${userId} já está CONECTADO ou carregando...</h1>`);
-    }
-});
+    <div style="margin: 15px 0;">
+        <label>
+            <input type="checkbox" id="modo_manual"> <b>Intervenção Manual (Pausar IA)</b>
+        </label>
+    </div>
 
-app.get('/', (req, res) => {
-    res.send("Servidor do Bot está ONLINE na VM!");
-});
+    <button onclick="salvarConfiguracoes()">Salvar Configurações</button>
+</div>
 
-// ESCUTA OBRIGATÓRIA EM 0.0.0.0 PARA GOOGLE CLOUD
-app.listen(port, '0.0.0.0', () => {
-    console.log(`[Servidor] ONLINE na porta ${port}`);
-});
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  // COLE AQUI AS CONFIGURAÇÕES DO SEU FIREBASE (WEB APP)
+  const firebaseConfig = {
+    apiKey: "SUA_API_KEY",
+    authDomain: "SEU_PROJETO.firebaseapp.com",
+    projectId: "SEU_PROJETO",
+    storageBucket: "SEU_PROJETO.appspot.com",
+    messagingSenderId: "ID",
+    appId: "ID"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // Monitorar Status e QR Code em tempo real
+  onSnapshot(doc(db, "instancias", "whatsapp"), (doc) => {
+      const data = doc.data();
+      const statusBox = document.getElementById('status-box');
+      const qrImg = document.getElementById('qrcode');
+
+      if(data.status === 'online') {
+          statusBox.innerText = "BOT ONLINE";
+          statusBox.className = "status online";
+          qrImg.style.display = 'none';
+      } else {
+          statusBox.innerText = "AGUARDANDO QR CODE";
+          statusBox.className = "status";
+          if(data.qrcode) {
+              qrImg.src = data.qrcode;
+              qrImg.style.display = 'block';
+          }
+      }
+  });
+
+  // Função para salvar nicho e prompt
+  window.salvarConfiguracoes = async () => {
+      const promptText = document.getElementById('prompt').value;
+      const manual = document.getElementById('modo_manual').checked;
+      
+      await setDoc(doc(db, "configuracoes", "ia"), {
+          prompt_vendas: promptText,
+          modo_manual: manual
+      }, { merge: true });
+
+      alert("Configurações salvas! O bot já atualizou a inteligência.");
+  }
+</script>
+</body>
+</html>
