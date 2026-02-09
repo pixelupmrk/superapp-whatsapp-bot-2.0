@@ -1,90 +1,124 @@
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <title>CRM SuperApp 2.0 - Controle de Bot</title>
-    <style>
-        body { font-family: sans-serif; background: #f0f2f5; padding: 20px; }
-        .card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 600px; margin: auto; }
-        h1 { color: #075e54; text-align: center; }
-        .status { padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 20px; font-weight: bold; }
-        .online { background: #dcf8c6; color: #075e54; }
-        textarea { width: 100%; height: 150px; margin: 10px 0; border-radius: 5px; border: 1px solid #ccc; padding: 10px; }
-        button { width: 100%; padding: 15px; background: #25d366; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
-        button:hover { background: #128c7e; }
-        #qrcode { display: block; margin: 20px auto; max-width: 200px; }
-    </style>
-</head>
-<body>
+const express = require('express');
+const cors = require('cors');
+const qrcode = require('qrcode');
+const fs = require('fs');
+const path = require('path');
+const { 
+    default: makeWASocket, 
+    useMultiFileAuthState, 
+    makeInMemoryStore, 
+    DisconnectReason 
+} = require('@whiskeysockets/baileys');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const pino = require('pino');
 
-<div class="card">
-    <h1>SuperApp CRM 2.0</h1>
-    <div id="status-box" class="status">Verificando status...</div>
+// --- Configuração do Firebase Admin (USANDO O SEU ARQUIVO JSON) ---
+let db;
+try {
+    const serviceAccount = require('./firebase-key.json');
+    initializeApp({ credential: cert(serviceAccount) });
+    db = getFirestore();
+    console.log("[Firebase] Conectado com sucesso!");
+} catch (error) {
+    console.error("[Firebase] ERRO ao carregar firebase-key.json:", error);
+}
+
+// --- Configuração da IA ---
+const GEMINI_KEY = "AIzaSyApqtbHH451RHYwRG-FMshsvS9JZx21Rkk"; // Coloque sua chave aqui ou em env
+const genAI = new GoogleGenerativeAI(GEMINI_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+// --- Configuração do Servidor ---
+const app = express();
+app.use(cors()); 
+app.use(express.json());
+const port = 8080;
+
+const whatsappClients = {};
+const qrCodeDataStore = {}; 
+
+// --- Função para Salvar QR Code no Firebase para o Dashboard ---
+async function saveQRToFirebase(userId, url) {
+    try {
+        await db.collection('instancias').doc('whatsapp').set({
+            qrcode: url,
+            status: 'aguardando_leitura',
+            updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
+    } catch (e) { console.error("Erro ao salvar QR no Firebase", e); }
+}
+
+// --- Função Principal do WhatsApp ---
+async function startBot(userId = "admin") {
+    const { state, saveCreds } = await useMultiFileAuthState(`auth_${userId}`);
     
-    <img id="qrcode" src="" alt="Aguardando QR Code..." style="display:none;">
+    const sock = makeWASocket({
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: true,
+        auth: state,
+        browser: ['SuperApp 2.0', 'Chrome', '1.0.0']
+    });
 
-    <h3>Identidade da IA (Nicho)</h3>
-    <p>Defina como o bot deve se comportar:</p>
-    <textarea id="prompt" placeholder="Ex: Você é um corretor de imóveis focado em vendas de luxo..."></textarea>
-    
-    <div style="margin: 15px 0;">
-        <label>
-            <input type="checkbox" id="modo_manual"> <b>Intervenção Manual (Pausar IA)</b>
-        </label>
-    </div>
+    sock.ev.on('creds.update', saveCreds);
 
-    <button onclick="salvarConfiguracoes()">Salvar Configurações</button>
-</div>
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
+        
+        if (qr) {
+            const url = await qrcode.toDataURL(qr);
+            saveQRToFirebase(userId, url);
+            console.log("[WhatsApp] Novo QR Code gerado. Escaneie no seu Dashboard!");
+        }
 
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-  import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        if (connection === 'close') {
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) startBot(userId);
+        } else if (connection === 'open') {
+            console.log("[WhatsApp] Conectado!");
+            await db.collection('instancias').doc('whatsapp').update({ status: 'online', qrcode: null });
+        }
+    });
 
-  // COLE AQUI AS CONFIGURAÇÕES DO SEU FIREBASE (WEB APP)
-  const firebaseConfig = {
-    apiKey: "SUA_API_KEY",
-    authDomain: "SEU_PROJETO.firebaseapp.com",
-    projectId: "SEU_PROJETO",
-    storageBucket: "SEU_PROJETO.appspot.com",
-    messagingSenderId: "ID",
-    appId: "ID"
-  };
+    // LÓGICA DE MENSAGENS COM INTELIGÊNCIA POR NICHO
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        const msg = messages[0];
+        if (!msg.message || msg.key.fromMe) return;
 
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
+        const sender = msg.key.remoteJid;
+        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
 
-  // Monitorar Status e QR Code em tempo real
-  onSnapshot(doc(db, "instancias", "whatsapp"), (doc) => {
-      const data = doc.data();
-      const statusBox = document.getElementById('status-box');
-      const qrImg = document.getElementById('qrcode');
+        try {
+            // 1. BUSCA CONFIGURAÇÃO DE NICHO NO FIREBASE
+            const configDoc = await db.collection('configuracoes').doc('ia').get();
+            const config = configDoc.data() || { prompt_vendas: "Você é um assistente prestativo.", modo_manual: false };
 
-      if(data.status === 'online') {
-          statusBox.innerText = "BOT ONLINE";
-          statusBox.className = "status online";
-          qrImg.style.display = 'none';
-      } else {
-          statusBox.innerText = "AGUARDANDO QR CODE";
-          statusBox.className = "status";
-          if(data.qrcode) {
-              qrImg.src = data.qrcode;
-              qrImg.style.display = 'block';
-          }
-      }
-  });
+            // 2. VERIFICA SE ESTÁ NO MODO MANUAL (CRM INTERVENÇÃO)
+            if (config.modo_manual) {
+                console.log("[IA] Modo manual ativo. Silenciando bot.");
+                return;
+            }
 
-  // Função para salvar nicho e prompt
-  window.salvarConfiguracoes = async () => {
-      const promptText = document.getElementById('prompt').value;
-      const manual = document.getElementById('modo_manual').checked;
-      
-      await setDoc(doc(db, "configuracoes", "ia"), {
-          prompt_vendas: promptText,
-          modo_manual: manual
-      }, { merge: true });
+            // 3. GERA RESPOSTA COM A PERSONALIDADE DO NICHO
+            const promptFinal = `${config.prompt_vendas}\n\nCliente diz: ${text}`;
+            const result = await model.generateContent(promptFinal);
+            const aiResponse = result.response.text();
 
-      alert("Configurações salvas! O bot já atualizou a inteligência.");
-  }
-</script>
-</body>
-</html>
+            // 4. ENVIA E SALVA NO HISTÓRICO
+            await sock.sendMessage(sender, { text: aiResponse });
+            
+            // Opcional: Salvar no histórico do Firebase aqui
+        } catch (err) {
+            console.error("Erro ao processar IA:", err);
+        }
+    });
+
+    whatsappClients[userId] = sock;
+}
+
+// Iniciar o bot automaticamente
+startBot();
+
+app.get('/', (req, res) => res.send("Servidor SuperApp 2.0 Ativo"));
+app.listen(port, () => console.log(`[Servidor] Rodando na porta ${port}`));
