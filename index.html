@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SuperApp 2.0 - Painel de Controle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+    <div class="max-w-4xl mx-auto py-10 px-4">
+        <header class="flex justify-between items-center mb-8 bg-white p-6 rounded-xl shadow-sm">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800">SuperApp CRM 2.0</h1>
+                <p class="text-sm text-gray-500">Gerenciamento de IA por Nicho</p>
+            </div>
+            <div id="status-badge" class="px-4 py-2 rounded-full text-sm font-bold bg-gray-200 text-gray-600">
+                VERIFICANDO...
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white p-6 rounded-xl shadow-sm">
+                <h2 class="text-lg font-semibold mb-4 text-gray-700">Conexão WhatsApp</h2>
+                <div id="qr-container" class="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-200 rounded-lg min-h-[250px]">
+                    <p id="qr-placeholder" class="text-gray-400 text-center">O QR Code aparecerá aqui quando necessário</p>
+                    <img id="qrcode-img" class="hidden w-64 h-64 shadow-md" src="" alt="QR Code">
+                </div>
+                <p class="text-xs text-gray-400 mt-4 text-center italic">Escaneie para conectar o bot 24/7 no Google Cloud</p>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow-sm flex flex-col">
+                <h2 class="text-lg font-semibold mb-4 text-gray-700">Inteligência do Bot</h2>
+                
+                <label class="text-sm font-medium text-gray-600 mb-1">Identidade / Nicho</label>
+                <textarea id="prompt-input" class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none text-sm h-40" 
+                    placeholder="Ex: Você é um vendedor da Imobiliária X. Seu objetivo é agendar visitas. Seja cordial e use emojis..."></textarea>
+                
+                <div class="mt-4 flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                    <span class="text-sm font-medium text-blue-700">Intervenção Manual</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="manual-toggle" class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                    </label>
+                </div>
+
+                <button onclick="saveSettings()" id="btn-save" class="mt-4 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors">
+                    SALVAR CONFIGURAÇÃO
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // COLOQUE SEU CONFIG WEB AQUI
+        const firebaseConfig = {
+            apiKey: "SUA_API_KEY",
+            authDomain: "SEU_PROJETO.firebaseapp.com",
+            projectId: "SEU_PROJETO",
+            storageBucket: "SEU_PROJETO.appspot.com",
+            messagingSenderId: "ID",
+            appId: "ID"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // ESCUTAR MUDANÇAS NO BOT (Status e QR)
+        onSnapshot(doc(db, "instancias", "whatsapp"), (doc) => {
+            if (doc.exists()) {
+                const data = doc.data();
+                const badge = document.getElementById('status-badge');
+                const qrImg = document.getElementById('qrcode-img');
+                const placeholder = document.getElementById('qr-placeholder');
+
+                if (data.status === 'online') {
+                    badge.innerText = "● ONLINE";
+                    badge.className = "px-4 py-2 rounded-full text-sm font-bold bg-green-100 text-green-700";
+                    qrImg.classList.add('hidden');
+                    placeholder.classList.remove('hidden');
+                    placeholder.innerText = "Bot conectado e trabalhando!";
+                } else if (data.qrcode) {
+                    badge.innerText = "○ AGUARDANDO QR";
+                    badge.className = "px-4 py-2 rounded-full text-sm font-bold bg-yellow-100 text-yellow-700";
+                    qrImg.src = data.qrcode;
+                    qrImg.classList.remove('hidden');
+                    placeholder.classList.add('hidden');
+                }
+            }
+        });
+
+        // SALVAR NO FIREBASE
+        window.saveSettings = async () => {
+            const btn = document.getElementById('btn-save');
+            const prompt = document.getElementById('prompt-input').value;
+            const isManual = document.getElementById('manual-toggle').checked;
+
+            btn.innerText = "SALVANDO...";
+            btn.disabled = true;
+
+            try {
+                await setDoc(doc(db, "configuracoes", "ia"), {
+                    prompt_vendas: prompt,
+                    modo_manual: isManual
+                }, { merge: true });
+                alert("Configuração atualizada no Bot!");
+            } catch (e) {
+                alert("Erro ao salvar: " + e.message);
+            } finally {
+                btn.innerText = "SALVAR CONFIGURAÇÃO";
+                btn.disabled = false;
+            }
+        };
+    </script>
+</body>
+</html>
