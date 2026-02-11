@@ -6,23 +6,37 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-900 text-white font-sans">
-    <div class="max-w-2xl mx-auto p-6 text-center">
-        <h1 class="text-3xl font-bold text-green-400 mb-8">SuperApp 2.0</h1>
-        <div class="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700">
-            <div class="mb-4">
-                <span id="badge" class="px-4 py-1 rounded-full text-xs font-bold bg-slate-700 text-slate-400 uppercase">Sincronizando...</span>
+    <div class="max-w-4xl mx-auto p-6">
+        <h1 class="text-3xl font-bold text-green-400 mb-8 text-center">SuperApp 2.0</h1>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700">
+                <div class="mb-4 text-center">
+                    <span id="badge" class="px-4 py-1 rounded-full text-xs font-bold bg-slate-700 text-slate-400">SINCRONIZANDO...</span>
+                </div>
+                
+                <div class="bg-white p-4 rounded-xl flex items-center justify-center min-h-[200px] mb-6">
+                    <img id="qr" class="hidden w-48 h-48" src="">
+                    <div id="success" class="hidden text-green-600 font-bold text-xl uppercase italic text-center">✓ Bot Online<br><small class="text-slate-400">IA Ativa</small></div>
+                </div>
+
+                <label class="text-xs text-slate-400 font-bold uppercase block mb-2">Prompt da IA</label>
+                <textarea id="prompt" class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-sm h-24 mb-4" placeholder="Ex: Você é um vendedor..."></textarea>
+                <button onclick="salvarPrompt()" class="w-full bg-green-600 py-3 rounded-lg font-bold uppercase">Salvar Config</button>
             </div>
-            <div class="bg-white p-4 rounded-xl inline-block min-w-[280px] min-h-[280px] flex items-center justify-center">
-                <p id="msg" class="text-slate-800 font-medium">Aguardando sinal do Bot...</p>
-                <img id="qr" class="hidden w-64 h-64" src="">
-                <div id="success" class="hidden text-green-600 font-bold text-2xl uppercase">✓ Conectado</div>
+
+            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 flex flex-col h-[500px]">
+                <h2 class="text-sm font-bold text-slate-400 uppercase mb-4">Conversas Recentes</h2>
+                <div id="chat-box" class="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                    <p class="text-slate-500 text-sm italic">Aguardando mensagens...</p>
+                </div>
             </div>
         </div>
     </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, doc, onSnapshot, setDoc, collection, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAi3LTAIeeD4_-6BmnNBI2kgiR5kLCKgQE",
@@ -34,31 +48,47 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // LENDO 'instancias' -> 'whatsapp' (SEM ACENTOS)
+        // ESCUTAR STATUS DO BOT
         onSnapshot(doc(db, "instancias", "whatsapp"), (snap) => {
-            const badge = document.getElementById('badge');
-            const msg = document.getElementById('msg');
+            const data = snap.data();
             const qrImg = document.getElementById('qr');
             const success = document.getElementById('success');
+            const badge = document.getElementById('badge');
 
-            if (snap.exists()) {
-                const data = snap.data();
-                if (data.qrcode) {
-                    badge.innerText = "ESCANEIE O QR CODE";
-                    badge.className = "px-4 py-1 rounded-full text-xs font-bold bg-yellow-500 text-black";
-                    msg.classList.add('hidden');
-                    qrImg.src = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" + encodeURIComponent(data.qrcode);
-                    qrImg.classList.remove('hidden');
-                } else if (data.status === 'online') {
-                    badge.innerText = "SISTEMA ONLINE";
-                    badge.className = "px-4 py-1 rounded-full text-xs font-bold bg-green-500 text-white";
-                    qrImg.classList.add('hidden');
-                    success.classList.remove('hidden');
-                }
-            } else {
-                badge.innerText = "AGUARDANDO CRIAÇÃO DO DOCUMENTO";
+            if (data?.status === 'online') {
+                qrImg.classList.add('hidden');
+                success.classList.remove('hidden');
+                badge.className = "px-4 py-1 rounded-full text-xs font-bold bg-green-500 text-white";
+                badge.innerText = "ONLINE";
+            } else if (data?.qrcode) {
+                qrImg.src = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" + encodeURIComponent(data.qrcode);
+                qrImg.classList.remove('hidden');
+                success.classList.add('hidden');
             }
         });
+
+        // ESCUTAR MENSAGENS (CHAT)
+        const q = query(collection(db, "historico"), orderBy("data", "desc"), limit(10));
+        onSnapshot(q, (snap) => {
+            const chatBox = document.getElementById('chat-box');
+            chatBox.innerHTML = '';
+            snap.forEach(doc => {
+                const item = doc.data();
+                chatBox.innerHTML += `
+                    <div class="text-xs">
+                        <div class="text-green-400 font-bold mb-1">${item.contato}</div>
+                        <div class="bg-slate-900 p-2 rounded-lg mb-1 italic text-slate-300">"${item.texto}"</div>
+                        <div class="bg-slate-700 p-2 rounded-lg text-white">🤖 ${item.resposta}</div>
+                    </div>
+                `;
+            });
+        });
+
+        window.salvarPrompt = async () => {
+            const text = document.getElementById('prompt').value;
+            await setDoc(doc(db, "configurações", "ia"), { prompt: text }, { merge: true });
+            alert("✅ Prompt atualizado!");
+        };
     </script>
 </body>
 </html>
