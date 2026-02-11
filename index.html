@@ -12,18 +12,18 @@
         
         <div class="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700">
             <div id="status-container" class="mb-4">
-                <span id="badge" class="px-4 py-1 rounded-full text-xs font-bold bg-slate-700 text-slate-400 uppercase">Conectando ao Firebase...</span>
+                <span id="badge" class="px-4 py-1 rounded-full text-xs font-bold bg-slate-700 text-slate-400 uppercase">Sincronizando...</span>
             </div>
 
             <div class="bg-white p-4 rounded-xl inline-block min-w-[280px] min-h-[280px] flex items-center justify-center border-4 border-slate-700">
-                <p id="msg" class="text-slate-800 font-medium">Aguardando sinal do Bot...</p>
+                <p id="msg" class="text-slate-800 font-medium text-center">Aguardando sinal do Bot...</p>
                 <img id="qr" class="hidden w-64 h-64" src="">
-                <div id="success" class="hidden text-green-600 font-bold text-2xl uppercase italic">✓ Bot Conectado</div>
+                <div id="success" class="hidden text-green-600 font-bold text-2xl uppercase italic">✓ Conectado</div>
             </div>
 
             <div class="mt-8 text-left">
-                <label class="text-xs text-slate-400 font-bold uppercase block mb-2">Personalidade da IA (Nicho)</label>
-                <textarea id="prompt" class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm h-24 outline-none focus:border-green-500" placeholder="Ex: Você é um vendedor amigável..."></textarea>
+                <label class="text-xs text-slate-400 font-bold uppercase block mb-2">Personalidade da IA</label>
+                <textarea id="prompt" class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm h-24 outline-none focus:border-green-500" placeholder="Digite aqui..."></textarea>
                 <button id="btnSalvar" class="w-full mt-4 bg-green-600 hover:bg-green-500 py-3 rounded-lg font-bold transition-all uppercase shadow-lg">Salvar Configuração</button>
             </div>
         </div>
@@ -33,7 +33,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // Configuração corrigida para o projeto bot2-79d05
         const firebaseConfig = {
             apiKey: "AIzaSyAi3LTAIeeD4_-6BmnNBI2kgiR5kLCKgQE",
             authDomain: "bot2-79d05.firebaseapp.com",
@@ -46,8 +45,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // ESCUTA EM TEMPO REAL: Corrigido para 'instâncias' e 'WhatsApp'
-        // conforme o seu print do console do Firebase
+        // ATENÇÃO: Nomes idênticos aos do seu print do Firebase (image_d1843e.png)
         onSnapshot(doc(db, "instâncias", "WhatsApp"), (snap) => {
             const badge = document.getElementById('badge');
             const msg = document.getElementById('msg');
@@ -57,38 +55,32 @@
             if (snap.exists()) {
                 const data = snap.data();
                 
-                // Lendo o campo 'código QR' com acento e espaço
-                if (data['código QR'] && data.status !== 'online') {
+                // Busca o campo 'código QR' (com acento e espaço)
+                if (data['código QR'] && data.status === 'aguardando') {
                     badge.innerText = "ESCANEIE O QR CODE";
-                    badge.className = "px-4 py-1 rounded-full text-xs font-bold bg-yellow-500 text-black uppercase";
+                    badge.className = "px-4 py-1 rounded-full text-xs font-bold bg-yellow-500 text-black";
                     msg.classList.add('hidden');
                     qrImg.src = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" + encodeURIComponent(data['código QR']);
                     qrImg.classList.remove('hidden');
                     success.classList.add('hidden');
-                } 
-                
-                if (data.status === 'online') {
+                } else if (data.status === 'online') {
                     badge.innerText = "SISTEMA ONLINE";
-                    badge.className = "px-4 py-1 rounded-full text-xs font-bold bg-green-500 text-white uppercase";
+                    badge.className = "px-4 py-1 rounded-full text-xs font-bold bg-green-500 text-white";
                     msg.classList.add('hidden');
                     qrImg.classList.add('hidden');
                     success.classList.remove('hidden');
                 }
             } else {
-                badge.innerText = "DOCUMENTO NÃO ENCONTRADO";
+                badge.innerText = "DOCUMENTO NÃO ENCONTRADO NO BANCO";
             }
         });
 
-        // Função de salvar prompt
         document.getElementById('btnSalvar').onclick = async () => {
-            const prompt = document.getElementById('prompt').value;
+            const promptTexto = document.getElementById('prompt').value;
             try {
-                // Criando a coleção 'configurações' (com acento) para manter o padrão
-                await setDoc(doc(db, "configurações", "ia"), { prompt_vendas: prompt }, { merge: true });
-                alert("✅ Configuração Salva!");
-            } catch (e) { 
-                alert("❌ Erro ao salvar: " + e.message); 
-            }
+                await setDoc(doc(db, "configurações", "ia"), { prompt: promptTexto }, { merge: true });
+                alert("✅ Salvo!");
+            } catch (e) { alert("Erro: " + e.message); }
         };
     </script>
 </body>
