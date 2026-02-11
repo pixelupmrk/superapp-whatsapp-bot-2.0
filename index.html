@@ -24,7 +24,7 @@
             <div class="mt-8 text-left">
                 <label class="text-xs text-slate-400 font-bold uppercase block mb-2">Personalidade da IA (Nicho)</label>
                 <textarea id="prompt" class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm h-24 outline-none focus:border-green-500" placeholder="Ex: Você é um vendedor amigável..."></textarea>
-                <button onclick="salvar()" class="w-full mt-4 bg-green-600 hover:bg-green-500 py-3 rounded-lg font-bold transition-all uppercase">Salvar Configuração</button>
+                <button id="btnSalvar" class="w-full mt-4 bg-green-600 hover:bg-green-500 py-3 rounded-lg font-bold transition-all uppercase">Salvar Configuração</button>
             </div>
         </div>
     </div>
@@ -33,21 +33,21 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // Sua configuração real do Firebase
+        // Configuração atualizada para o projeto bot2-79d05
         const firebaseConfig = {
             apiKey: "AIzaSyAi3LTAIeeD4_-6BmnNBI2kgiR5kLCKgQE",
-            authDomain: "superapp-d0368.firebaseapp.com",
-            projectId: "superapp-d0368",
-            storageBucket: "superapp-d0368.firebasestorage.app",
-            messagingSenderId: "469594170619",
-            appId: "1:469594170619:web:04339a8c7e64caec0bbc5e"
+            authDomain: "bot2-79d05.firebaseapp.com",
+            projectId: "bot2-79d05",
+            storageBucket: "bot2-79d05.appspot.com",
+            messagingSenderId: "1033946903068",
+            appId: "1:1033946903068:web:04339a8c7e64caec0bbc5e"
         };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // Escuta em tempo real a coleção 'instancias' que o bot no SSH atualiza
-        onSnapshot(doc(db, "instancias", "whatsapp"), (snap) => {
+        // ESCUTA EM TEMPO REAL (Nomes corrigidos para bater com seu print do Firebase)
+        onSnapshot(doc(db, "instâncias", "WhatsApp"), (snap) => {
             const badge = document.getElementById('badge');
             const msg = document.getElementById('msg');
             const qrImg = document.getElementById('qr');
@@ -55,29 +55,36 @@
 
             if (snap.exists()) {
                 const data = snap.data();
+                
+                // Verifica o campo 'código QR' (com acento conforme seu banco)
+                if (data['código QR']) {
+                    badge.innerText = "ESCANEIE O QR CODE";
+                    badge.className = "px-4 py-1 rounded-full text-xs font-bold bg-yellow-500 text-black";
+                    msg.classList.add('hidden');
+                    qrImg.src = data['código QR'];
+                    qrImg.classList.remove('hidden');
+                    success.classList.add('hidden');
+                } 
+                
                 if (data.status === 'online') {
-                    badge.innerText = "ONLINE";
+                    badge.innerText = "SISTEMA ONLINE";
                     badge.className = "px-4 py-1 rounded-full text-xs font-bold bg-green-500 text-white";
                     msg.classList.add('hidden');
                     qrImg.classList.add('hidden');
                     success.classList.remove('hidden');
-                } else if (data.qrcode) {
-                    badge.innerText = "AGUARDANDO ESCANEAMENTO";
-                    badge.className = "px-4 py-1 rounded-full text-xs font-bold bg-yellow-500 text-black";
-                    msg.classList.add('hidden');
-                    qrImg.src = data.qrcode;
-                    qrImg.classList.remove('hidden');
-                    success.classList.add('hidden');
                 }
             }
         });
 
-        window.salvar = async () => {
+        // Função salvar
+        document.getElementById('btnSalvar').onclick = async () => {
             const prompt = document.getElementById('prompt').value;
             try {
-                await setDoc(doc(db, "configuracoes", "ia"), { prompt_vendas: prompt }, { merge: true });
-                alert("Configuração Salva!");
-            } catch (e) { alert("Erro ao salvar: " + e.message); }
+                await setDoc(doc(db, "configurações", "ia"), { prompt_vendas: prompt }, { merge: true });
+                alert("✅ Configuração Salva!");
+            } catch (e) { 
+                alert("❌ Erro ao salvar: " + e.message); 
+            }
         };
     </script>
 </body>
